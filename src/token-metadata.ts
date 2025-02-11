@@ -75,5 +75,5 @@ const tx = await sendAndConfirmTransaction(
   [user]
 );
 
-console.log(`✅ Transaction confirmed, explorer link is: ${getExplorerLink("transaction", tx, "devnet")}!`);
-console.log(`✅ Look at the token mint again: ${getExplorerLink("address", tokenMintAccount.toString(), "devnet")}!`);
+console.log(`✅ Transaction confirmed, explorer link is: ${getExplorerLink("transaction", tx, "devnet")}`);
+console.log(`✅ Look at the token mint again: ${getExplorerLink("address", tokenMintAccount.toString(), "devnet")}`);
