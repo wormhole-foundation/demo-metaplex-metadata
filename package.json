@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "create-metadata": "esrun src/token-metadata.ts create",
-    "update-metadata": "esrun src/token-metadata.ts update"
+    "update-metadata": "esrun src/token-metadata.ts update",
+    "transfer-authority": "esrun src/transfer-updateAuthority.ts"
   },
   "type": "module",
   "keywords": [],
