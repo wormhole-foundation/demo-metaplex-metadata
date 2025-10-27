@@ -1,21 +1,42 @@
 import "dotenv/config";
-import { getKeypairFromEnvironment, getExplorerLink } from "@solana-developers/helpers";
-import { Connection, clusterApiUrl, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
+import { getKeypairFromEnvironment, getKeypairFromFile, getExplorerLink } from "@solana-developers/helpers";
+import { clusterApiUrl, PublicKey } from "@solana/web3.js";
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { 
-  createCreateMetadataAccountV3Instruction,
-  createUpdateMetadataAccountV2Instruction 
+  createMetadataAccountV3, 
+  updateMetadataAccountV2,
+  mplTokenMetadata,
+  findMetadataPda,
 } from "@metaplex-foundation/mpl-token-metadata";
+import { 
+  createSignerFromKeypair, 
+  signerIdentity, 
+  publicKey as umiPublicKey,
+  Umi
+} from "@metaplex-foundation/umi";
+import { base58 } from "@metaplex-foundation/umi/serializers";
 
 // based on https://solana.stackexchange.com/a/12429
 
-const user = getKeypairFromEnvironment("SOL_PRIVATE_KEY");
-const connection = new Connection(clusterApiUrl("devnet"));
+// Load keypair from environment variable or .json file argument
+const keypairFilePath = process.argv.find(arg => arg.endsWith('.json') && !arg.includes('package.json')) || null;
+const user = keypairFilePath 
+  ? await getKeypairFromFile(keypairFilePath)
+  : getKeypairFromEnvironment("SOL_PRIVATE_KEY");
+
 //TODO: subtitute with your token mint account  
 const tokenMintAccount = new PublicKey("BzKzjXa2XA9WtNvnZTnsv7ZLnTxq4Eu87rcSoUcX5qwW");
 
-const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+console.log(`Loaded keypair securely! Public key: ${user.publicKey.toBase58()}`);
 
-console.log(`🔑 We've loaded our keypair securely, using an env file! Our public key is: ${user.publicKey.toBase58()}`);
+// Initialize Umi
+const umi: Umi = createUmi(clusterApiUrl("devnet"));
+
+// Convert Keypair to Umi format
+const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+const signer = createSignerFromKeypair(umi, umiKeypair);
+umi.use(signerIdentity(signer));
+umi.use(mplTokenMetadata());
 
 //TODO: update with your metadata
 const metadataData = {
@@ -28,52 +49,44 @@ const metadataData = {
   uses: null,
 };
 
-const [metadataPDA] = PublicKey.findProgramAddressSync(
-  [
-    Buffer.from("metadata"),
-    TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-    tokenMintAccount.toBuffer(),
-  ],
-  TOKEN_METADATA_PROGRAM_ID
-);
+const mint = umiPublicKey(tokenMintAccount.toBase58());
+const metadataPda = findMetadataPda(umi, { mint });
 
-const instruction = process.argv[2] === 'update' 
-  ? createUpdateMetadataAccountV2Instruction(
-      {
-        metadata: metadataPDA,
-        updateAuthority: user.publicKey,
-      },
-      {
-        updateMetadataAccountArgsV2: {
-          data: metadataData,
-          updateAuthority: user.publicKey,
-          primarySaleHappened: null,
-          isMutable: true,
-        },
-      }
-    )
-  : createCreateMetadataAccountV3Instruction(
-      {
-        metadata: metadataPDA,
-        mint: tokenMintAccount,
-        mintAuthority: user.publicKey,
-        payer: user.publicKey,
-        updateAuthority: user.publicKey,
-      },
-      {
-        createMetadataAccountArgsV3: {
-          data: metadataData,
-          isMutable: true,
-          collectionDetails: null,
-        },
-      }
-    );
+if (process.argv[2] === 'update') {
+  // Update existing metadata
+  const result = await updateMetadataAccountV2(umi, {
+    metadata: metadataPda,
+    updateAuthority: signer,
+    data: {
+      ...metadataData,
+      creators: null,
+      collection: null,
+      uses: null,
+    },
+    primarySaleHappened: false,
+    isMutable: true,
+  }).sendAndConfirm(umi);
+  
+  const signature = base58.deserialize(result.signature)[0];
+  console.log(`Transaction confirmed, explorer link is: ${getExplorerLink("transaction", signature, "devnet")}`);
+} else {
+  // Create new metadata
+  const result = await createMetadataAccountV3(umi, {
+    mint,
+    mintAuthority: signer,
+    updateAuthority: signer.publicKey,
+    data: {
+      ...metadataData,
+      creators: null,
+      collection: null,
+      uses: null,
+    },
+    isMutable: true,
+    collectionDetails: null,
+  }).sendAndConfirm(umi);
+  
+  const signature = base58.deserialize(result.signature)[0];
+  console.log(`Transaction confirmed, explorer link is: ${getExplorerLink("transaction", signature, "devnet")}`);
+}
 
-const tx = await sendAndConfirmTransaction(
-  connection,
-  new Transaction().add(instruction),
-  [user]
-);
-
-console.log(`✅ Transaction confirmed, explorer link is: ${getExplorerLink("transaction", tx, "devnet")}`);
-console.log(`✅ Look at the token mint again: ${getExplorerLink("address", tokenMintAccount.toString(), "devnet")}`);
+console.log(`Look at the token mint again: ${getExplorerLink("address", tokenMintAccount.toString(), "devnet")}`);

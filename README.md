@@ -1,6 +1,6 @@
 # Metaplex Metadata Demo
 
-A utility script for creating and managing SPL token metadata using the Metaplex SDK on Solana.
+A utility script for creating and managing SPL token metadata using the Metaplex Umi framework on Solana.
 
 ## Project Setup
 
@@ -17,22 +17,33 @@ cd demo-metaplex-metadata
 npm install
 ```
 
-3. Setup environment variable:
+3. Setup Keypair:
 
+You can load your keypair in two ways:
+
+Option A: Environment Variable (create a `.env` file):
 ```bash
 SOL_PRIVATE_KEY="INSERT_PRIVATE_KEY"
+```
+
+Option B: Keypair File (use existing Solana CLI keypair):
+```bash
+# No setup needed - just pass the --keypair-file flag when running commands
+# Example keypair location: ~/.config/solana/id.json
 ```
 
 ## Usage:
 
 ### 1. Create or Update Token Metadata
 
-You can run the script to create or update metadata for an SPL token using the Metaplex SDK.
+You can run the script to create or update metadata for an SPL token using the Metaplex Umi framework.
 
 Creates the metadata for your SPL token:
 
 ```bash
 npm run create-metadata
+# Or with a keypair file:
+npm run create-metadata ~/.config/solana/id.json
 ```
 
 Updates the metadata:
@@ -51,12 +62,12 @@ npm run transfer-authority <NEW_AUTHORITY_PUBKEY>
 
 ## Important Notes
    - Never commit your private key or sensitive information  
-   - **Before transferring update authority:** Make sure you have the correct new authority pubkey. This action is irreversible!
+   - Before transferring update authority: Make sure you have the correct new authority pubkey. This action is irreversible!
    - Update the following TODOs in the scripts:
-     - **token-metadata.ts:**
+     - token-metadata.ts:
        - Token mint account
        - Metadata details (name, symbol, URI, etc.)
-     - **transfer-updateAuthority.ts:**
+     - transfer-updateAuthority.ts:
        - Token mint account (should match the one in token-metadata.ts)
        - Network (mainnet-beta or devnet)
        - New update authority pubkey (via command line argument)

@@ -1,13 +1,25 @@
 import "dotenv/config";
 import { getKeypairFromEnvironment, getExplorerLink } from "@solana-developers/helpers";
-import { Connection, clusterApiUrl, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
-import { createUpdateMetadataAccountV2Instruction } from "@metaplex-foundation/mpl-token-metadata";
+import { clusterApiUrl, PublicKey } from "@solana/web3.js";
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
+import { 
+  updateMetadataAccountV2,
+  mplTokenMetadata,
+  findMetadataPda
+} from "@metaplex-foundation/mpl-token-metadata";
+import { 
+  createSignerFromKeypair, 
+  signerIdentity, 
+  publicKey as umiPublicKey,
+  Umi
+} from "@metaplex-foundation/umi";
+import { base58 } from "@metaplex-foundation/umi/serializers";
 import * as readline from "readline";
 
 const user = getKeypairFromEnvironment("SOL_PRIVATE_KEY"); // MUST be the CURRENT update authority
 
 //TODO: Change to "mainnet-beta" if working with mainnet tokens, or "devnet" for devnet
-const connection = new Connection(clusterApiUrl("mainnet-beta"));
+const cluster = "devnet";
 
 //TODO: Replace with YOUR token mint account (the token whose update authority you want to transfer)
 const tokenMintAccount = new PublicKey("BzKzjXa2XA9WtNvnZTnsv7ZLnTxq4Eu87rcSoUcX5qwW");
@@ -18,14 +30,20 @@ const newUpdateAuthorityStr = process.argv[2];
 if (!newUpdateAuthorityStr) {
   throw new Error("Provide the new update authority pubkey as command line argument");
 }
-const newUpdateAuthority = new PublicKey(newUpdateAuthorityStr);
+const newUpdateAuthority = umiPublicKey(newUpdateAuthorityStr);
 
-// Token Metadata program id
-const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+// Initialize Umi
+const umi: Umi = createUmi(clusterApiUrl(cluster));
 
-console.log(`🔑 Loaded keypair. Current (signing) update authority: ${user.publicKey.toBase58()}`);
-console.log(`➡️  New update authority will be set to: ${newUpdateAuthority.toBase58()}`);
-console.log(`🪙 Token mint: ${tokenMintAccount.toBase58()}`);
+// Convert Keypair to Umi format
+const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+const signer = createSignerFromKeypair(umi, umiKeypair);
+umi.use(signerIdentity(signer));
+umi.use(mplTokenMetadata());
+
+console.log(`Loaded keypair. Current (signing) update authority: ${user.publicKey.toBase58()}`);
+console.log(`New update authority will be set to: ${newUpdateAuthorityStr}`);
+console.log(`Token mint: ${tokenMintAccount.toBase58()}`);
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -44,42 +62,29 @@ const confirmed = await new Promise<boolean>((resolve) => {
 });
 
 if (!confirmed) {
-  console.log("❌ Transfer cancelled.");
+  console.log("Transfer cancelled.");
   process.exit(0);
 }
 
-console.log("\n✅ Proceeding with transfer...\n");
+console.log("\nProceeding with transfer...\n");
 
-const [metadataPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), tokenMintAccount.toBuffer()],
-  TOKEN_METADATA_PROGRAM_ID
-);
+const mint = umiPublicKey(tokenMintAccount.toBase58());
+const metadataPda = findMetadataPda(umi, { mint });
 
-const ix = createUpdateMetadataAccountV2Instruction(
-  {
-    metadata: metadataPDA,
-    updateAuthority: user.publicKey, // current UA must sign
-  },
-  {
-    updateMetadataAccountArgsV2: {
-      data: null,                    // leave existing metadata unchanged
-      updateAuthority: newUpdateAuthority, 
-      primarySaleHappened: null,     
-      isMutable: null,             
-    },
-  }
-);
-
-(async () => {
-  const txSig = await sendAndConfirmTransaction(
-    connection,
-    new Transaction().add(ix),
-    [user]
-  );
+try {
+  // Update metadata account to transfer authority
+  const result = await updateMetadataAccountV2(umi, {
+    metadata: metadataPda,
+    updateAuthority: signer,
+    data: null, // leave existing metadata unchanged
+    newUpdateAuthority: newUpdateAuthority,
+  }).sendAndConfirm(umi);
+  
+  const signature = base58.deserialize(result.signature)[0];
   //TODO: Change "mainnet-beta" to "devnet" if you're using devnet
-  console.log(`✅ Tx confirmed: ${getExplorerLink("transaction", txSig, "mainnet-beta")}`);
-  console.log(`🔎 Mint: ${getExplorerLink("address", tokenMintAccount.toBase58(), "mainnet-beta")}`);
-})().catch((e) => {
-  console.error("❌ Failed to set update authority:", e);
+  console.log(`Tx confirmed: ${getExplorerLink("transaction", signature, cluster)}`);
+  console.log(`Mint: ${getExplorerLink("address", tokenMintAccount.toBase58(), cluster)}`);
+} catch (e) {
+  console.error("Failed to set update authority:", e);
   process.exit(1);
-});
+}
