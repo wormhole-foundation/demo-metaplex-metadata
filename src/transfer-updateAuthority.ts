@@ -1,20 +1,21 @@
 import "dotenv/config";
 import { getKeypairFromEnvironment, getExplorerLink } from "@solana-developers/helpers";
-import { clusterApiUrl, PublicKey } from "@solana/web3.js";
+import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
-import { 
+import {
   updateMetadataAccountV2,
   mplTokenMetadata,
   findMetadataPda
 } from "@metaplex-foundation/mpl-token-metadata";
-import { 
-  createSignerFromKeypair, 
-  signerIdentity, 
+import {
+  createSignerFromKeypair,
+  signerIdentity,
   publicKey as umiPublicKey,
   Umi
 } from "@metaplex-foundation/umi";
 import { base58 } from "@metaplex-foundation/umi/serializers";
 import * as readline from "readline";
+import { validateNotExecutable } from "./validate-authority.js";
 
 const user = getKeypairFromEnvironment("SOL_PRIVATE_KEY"); // MUST be the CURRENT update authority
 
@@ -30,6 +31,10 @@ const newUpdateAuthorityStr = process.argv[2];
 if (!newUpdateAuthorityStr) {
   throw new Error("Provide the new update authority pubkey as command line argument");
 }
+
+const connection = new Connection(clusterApiUrl(cluster));
+await validateNotExecutable(connection, newUpdateAuthorityStr);
+
 const newUpdateAuthority = umiPublicKey(newUpdateAuthorityStr);
 
 // Initialize Umi
